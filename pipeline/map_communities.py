@@ -25,6 +25,8 @@ Environment variable alternative for API key:
     GOOGLE_MAPS_API_KEY
 """
 
+from __future__ import annotations
+
 import argparse
 import csv
 import json
@@ -33,6 +35,7 @@ import sys
 import time
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import Optional, Tuple
 
 import requests
 from shapely.geometry import shape, Point
@@ -70,7 +73,7 @@ def fuzzy_best(query: str, candidates: list[str], threshold: float) -> tuple[str
     return (best_key, best_score) if best_score >= threshold else ("", 0.0)
 
 
-def geocode(area: str, api_key: str, session: requests.Session) -> tuple[float | None, float | None]:
+def geocode(area: str, api_key: str, session: requests.Session) -> Tuple[Optional[float], Optional[float]]:
     for query in [f"{area}, Dubai, UAE", f"{area}, UAE"]:
         try:
             r = session.get(
@@ -88,7 +91,7 @@ def geocode(area: str, api_key: str, session: requests.Session) -> tuple[float |
     return None, None
 
 
-def point_in_polygon(lon: float, lat: float, features: list) -> str | None:
+def point_in_polygon(lon: float, lat: float, features: list) -> Optional[str]:
     pt = Point(lon, lat)
     for feat in features:
         try:
@@ -133,7 +136,7 @@ def main():
     unique_areas = sorted({r.get("AREA_EN", "").strip() for r in rows if r.get("AREA_EN", "").strip()})
     print(f"\nMapping {len(unique_areas)} unique areas  [exact → geocode (cached) → fuzzy]")
 
-    mapping: dict[str, str] = {}   # AREA_EN → shapeName
+    mapping = {}   # AREA_EN → shapeName
     stats = {"exact": 0, "geocode": 0, "fuzzy": 0, "none": 0}
     fuzzy_queue = []
 
