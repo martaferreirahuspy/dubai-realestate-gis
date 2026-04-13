@@ -2,12 +2,15 @@
 # run_pipeline.sh
 # ---------------
 # Orchestrates the full pipeline:
-#   1. Fetch last 3 months from Dubai Pulse API
+#   1. Fetch recent transactions from Dubai Pulse API
 #   2. Map AREA_EN → COMMUNITY (DM shapeName)
-#   3. UPSERT into Snowflake
+#   3. UPSERT into Snowflake (safe to re-run — no duplicates)
 #
-# All secrets come from environment variables (set in GitHub Actions secrets).
-# Safe to re-run — idempotent UPSERT means no duplicates.
+# Usage:
+#   bash run_pipeline.sh                        # daily: last 3 days
+#   bash run_pipeline.sh --days 7               # last 7 days
+#   bash run_pipeline.sh --months 3             # backfill: last 3 months
+#   bash run_pipeline.sh --from 2025-01-01 --to 2025-12-31   # full year backfill
 
 set -euo pipefail
 
@@ -20,11 +23,11 @@ echo "════════════════════════�
 echo " Dubai RE Pipeline — $(date -u '+%Y-%m-%d %H:%M UTC')"
 echo "══════════════════════════════════════════════════"
 
-# Step 1 — Fetch
+# Step 1 — Fetch (pass through any args, default to last 3 days)
 echo ""
-echo "STEP 1 — Fetching transactions (last 3 months)..."
+echo "STEP 1 — Fetching transactions..."
 python3 "$SCRIPT_DIR/fetch_transactions.py" \
-  --months 3 \
+  ${@:---days 3} \
   --output "$RAW_CSV"
 
 # Step 2 — Map communities

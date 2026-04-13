@@ -3,10 +3,21 @@
 fetch_transactions.py
 ---------------------
 Fetches Dubai Land Department transactions from the Dubai Pulse API
-for the last N months and writes them to a local CSV.
+for the last N days (default: 3) or N months, and writes to a local CSV.
+
+Default mode is --days 3: fetches the last 3 days on every run.
+This is safe to overlap — the Snowflake MERGE upserts on TRANSACTION_NUMBER
+so re-fetching a transaction never creates duplicates.
 
 Usage:
-    python3 fetch_transactions.py --months 3 --output transactions.csv
+    # Daily run (fetch last 3 days, catches any late DLD registrations):
+    python3 fetch_transactions.py --days 3 --output transactions_raw.csv
+
+    # Backfill (fetch a longer window):
+    python3 fetch_transactions.py --months 3 --output transactions_raw.csv
+
+    # Explicit date range:
+    python3 fetch_transactions.py --from 2025-01-01 --to 2025-12-31 --output transactions_raw.csv
 
 Environment variables required:
     DUBAI_PULSE_CLIENT_ID       Your Dubai Pulse API client ID
@@ -21,7 +32,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dateutil.relativedelta import relativedelta
 from pathlib import Path
 
@@ -70,8 +81,15 @@ def fetch_page(token: str, date_from: str, date_to: str, offset: int) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch DLD transactions from Dubai Pulse API")
-    parser.add_argument("--months",  type=int, default=3,  help="How many months back to fetch (default: 3)")
-    parser.add_argument("--output",  default="transactions_raw.csv", help="Output CSV path")
+
+    # Lookback window — mutually exclusive, in priority order: --from/--to > --days > --months
+    window = parser.add_mutually_exclusive_group()
+    window.add_argument("--days",   type=int, help="Fetch last N days (default for daily runs: 3)")
+    window.add_argument("--months", type=int, help="Fetch last N months (for backfills)")
+
+    parser.add_argument("--from", dest="date_from", default=None, help="Explicit start date YYYY-MM-DD")
+    parser.add_argument("--to",   dest="date_to",   default=None, help="Explicit end date YYYY-MM-DD")
+    parser.add_argument("--output", default="transactions_raw.csv", help="Output CSV path")
     args = parser.parse_args()
 
     client_id     = os.environ.get("DUBAI_PULSE_CLIENT_ID")
@@ -79,9 +97,19 @@ def main():
     if not client_id or not client_secret:
         sys.exit("ERROR: Set DUBAI_PULSE_CLIENT_ID and DUBAI_PULSE_CLIENT_SECRET environment variables.")
 
-    today     = datetime.now(timezone.utc).date()
-    date_from = (today - relativedelta(months=args.months)).isoformat()
-    date_to   = today.isoformat()
+    today = datetime.now(timezone.utc).date()
+
+    if args.date_from and args.date_to:
+        date_from = args.date_from
+        date_to   = args.date_to
+    elif args.months:
+        date_from = (today - relativedelta(months=args.months)).isoformat()
+        date_to   = today.isoformat()
+    else:
+        # Default: last 3 days (safe overlap for daily runs)
+        days      = args.days if args.days else 3
+        date_from = (today - timedelta(days=days)).isoformat()
+        date_to   = today.isoformat()
 
     print(f"Fetching DLD transactions: {date_from} → {date_to}")
     print("Authenticating...")
